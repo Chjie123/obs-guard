@@ -1,0 +1,185 @@
+// guard_mask.effect -- 遮罩合成（单 pass）
+// 支持最多 16 个遮罩矩形，三种样式：纯色 / 高斯近似 / 马赛克。
+// 坐标一律为帧归一化 UV（0..1，左上原点），矩形由 CPU 侧算好外扩。
+
+uniform float4x4 ViewProj;
+
+uniform texture2d image;
+
+uniform float4 texel;        // (1/w, 1/h, w, h)
+uniform float2 pad_uv;       // 额外像素边距换算成 UV
+uniform float2 feather_uv;   // 边缘羽化宽度（UV）
+
+uniform float3 mask_color;
+uniform float  base_opacity;
+uniform float  style;        // 0 纯色 / 1 模糊 / 2 马赛克
+uniform float2 blur_uv;
+uniform float2 block_uv;
+
+uniform float  count;
+uniform float  sec;          // 秒，可用于呼吸/闪烁（保留）
+
+uniform float4 m0;  uniform float f0;
+uniform float4 m1;  uniform float f1;
+uniform float4 m2;  uniform float f2;
+uniform float4 m3;  uniform float f3;
+uniform float4 m4;  uniform float f4;
+uniform float4 m5;  uniform float f5;
+uniform float4 m6;  uniform float f6;
+uniform float4 m7;  uniform float f7;
+uniform float4 m8;  uniform float f8;
+uniform float4 m9;  uniform float f9;
+uniform float4 m10; uniform float f10;
+uniform float4 m11; uniform float f11;
+uniform float4 m12; uniform float f12;
+uniform float4 m13; uniform float f13;
+uniform float4 m14; uniform float f14;
+uniform float4 m15; uniform float f15;
+
+uniform float4 roi_rect;
+uniform float  roi_on;
+uniform float  box_on;
+
+sampler_state linear_sampler {
+	AddressU = Clamp;
+	AddressV = Clamp;
+	Filter   = Linear;
+};
+
+struct VertIn {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+struct VertOut {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertOut VSDefault(VertIn v_in)
+{
+	VertOut v_out;
+	v_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	v_out.uv  = v_in.uv;
+	return v_out;
+}
+
+// 单条遮罩合成
+float4 apply_mask(float4 col, float4 r, float fade, float2 uv)
+{
+	if (fade <= 0.002)
+		return col;
+
+	float2 lo = r.xy - pad_uv;
+	float2 hi = r.xy + r.zw + pad_uv;
+
+	if (uv.x < lo.x || uv.x > hi.x || uv.y < lo.y || uv.y > hi.y)
+		return col;
+
+	float3 c;
+
+	if (style < 0.5) {
+		// 纯色：L1 阻断级，绝不使用可被还原的模糊
+		c = mask_color;
+	} else if (style < 1.5) {
+		// 高斯近似：9 抽样，双环加权
+		float2 d = blur_uv;
+		c  = image.Sample(linear_sampler, uv).rgb * 0.200;
+		c += image.Sample(linear_sampler, uv + float2( d.x, 0.0)).rgb * 0.120;
+		c += image.Sample(linear_sampler, uv + float2(-d.x, 0.0)).rgb * 0.120;
+		c += image.Sample(linear_sampler, uv + float2(0.0,  d.y)).rgb * 0.120;
+		c += image.Sample(linear_sampler, uv + float2(0.0, -d.y)).rgb * 0.120;
+		c += image.Sample(linear_sampler, uv + float2( d.x,  d.y)).rgb * 0.080;
+		c += image.Sample(linear_sampler, uv + float2(-d.x,  d.y)).rgb * 0.080;
+		c += image.Sample(linear_sampler, uv + float2( d.x, -d.y)).rgb * 0.080;
+		c += image.Sample(linear_sampler, uv + float2(-d.x, -d.y)).rgb * 0.080;
+	} else {
+		// 马赛克：UV 量化，最省
+		float2 q = floor(uv / block_uv) * block_uv + block_uv * 0.5;
+		c = image.Sample(linear_sampler, q).rgb;
+	}
+
+	float a = saturate(base_opacity * fade);
+
+	// 1px 羽化，避免硬边锯齿；量级远小于外扩，不会泄漏内容
+	if (feather_uv.x > 0.0) {
+		float2 d2 = min(uv - lo, hi - uv);
+		float e = min(d2.x / feather_uv.x, d2.y / feather_uv.y);
+		a *= saturate(e);
+	}
+
+	return float4(lerp(col.rgb, c, a), col.a);
+}
+
+// 画框线（调试 ROI / 命中框）
+float4 outline(float4 col, float4 r, float2 uv, float3 tint)
+{
+	if (r.z <= 0.0001 || r.w <= 0.0001)
+		return col;
+	if (uv.x < r.x || uv.x > r.x + r.z || uv.y < r.y || uv.y > r.y + r.w)
+		return col;
+
+	float2 dmin = min(uv - r.xy, r.xy + r.zw - uv);
+	float e = min(dmin.x / texel.x, dmin.y / texel.y);
+	if (e > 1.5)
+		return col;
+
+	return float4(lerp(col.rgb, tint, 0.9), col.a);
+}
+
+float4 PSBase(VertIn v_in) : TARGET
+{
+	float2 uv = v_in.uv;
+	float4 col = image.Sample(linear_sampler, uv);
+
+	if (count > 0.5)  col = apply_mask(col, m0,  f0,  uv);
+	if (count > 1.5)  col = apply_mask(col, m1,  f1,  uv);
+	if (count > 2.5)  col = apply_mask(col, m2,  f2,  uv);
+	if (count > 3.5)  col = apply_mask(col, m3,  f3,  uv);
+	if (count > 4.5)  col = apply_mask(col, m4,  f4,  uv);
+	if (count > 5.5)  col = apply_mask(col, m5,  f5,  uv);
+	if (count > 6.5)  col = apply_mask(col, m6,  f6,  uv);
+	if (count > 7.5)  col = apply_mask(col, m7,  f7,  uv);
+	if (count > 8.5)  col = apply_mask(col, m8,  f8,  uv);
+	if (count > 9.5)  col = apply_mask(col, m9,  f9,  uv);
+	if (count > 10.5) col = apply_mask(col, m10, f10, uv);
+	if (count > 11.5) col = apply_mask(col, m11, f11, uv);
+	if (count > 12.5) col = apply_mask(col, m12, f12, uv);
+	if (count > 13.5) col = apply_mask(col, m13, f13, uv);
+	if (count > 14.5) col = apply_mask(col, m14, f14, uv);
+	if (count > 15.5) col = apply_mask(col, m15, f15, uv);
+
+	if (box_on > 0.5) {
+		float3 tint = float3(0.15, 1.0, 0.35);
+		if (count > 0.5)  col = outline(col, m0,  uv, tint);
+		if (count > 1.5)  col = outline(col, m1,  uv, tint);
+		if (count > 2.5)  col = outline(col, m2,  uv, tint);
+		if (count > 3.5)  col = outline(col, m3,  uv, tint);
+		if (count > 4.5)  col = outline(col, m4,  uv, tint);
+		if (count > 5.5)  col = outline(col, m5,  uv, tint);
+		if (count > 6.5)  col = outline(col, m6,  uv, tint);
+		if (count > 7.5)  col = outline(col, m7,  uv, tint);
+		if (count > 8.5)  col = outline(col, m8,  uv, tint);
+		if (count > 9.5)  col = outline(col, m9,  uv, tint);
+		if (count > 10.5) col = outline(col, m10, uv, tint);
+		if (count > 11.5) col = outline(col, m11, uv, tint);
+		if (count > 12.5) col = outline(col, m12, uv, tint);
+		if (count > 13.5) col = outline(col, m13, uv, tint);
+		if (count > 14.5) col = outline(col, m14, uv, tint);
+		if (count > 15.5) col = outline(col, m15, uv, tint);
+	}
+
+	if (roi_on > 0.5)
+		col = outline(col, roi_rect, uv, float3(1.0, 0.15, 0.85));
+
+	return col;
+}
+
+technique Draw
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSBase(v_in);
+	}
+}

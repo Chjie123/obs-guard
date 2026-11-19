@@ -1,0 +1,31 @@
+# build output
+build*/
+dist/
+sdk/
+out/
+
+# build logs
+*.log
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.sln
+*.vcxproj*
+*.xcodeproj/
+
+# binaries
+*.dll
+*.pdb
+*.ilk
+*.obj
+*.exp
+*.lib
+*.exe
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
