@@ -5,6 +5,10 @@
 #include <algorithm>
 #include <cstring>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace guard {
 namespace {
 
@@ -60,6 +64,7 @@ void config_defaults(obs_data_t *s)
 	obs_data_set_default_double(s, "conf", 0.35);
 	obs_data_set_default_double(s, "iou", 0.45);
 	obs_data_set_default_int(s, "max_det", 32);
+	obs_data_set_default_int(s, "mask_limit", kDefaultMaskLimit);
 	obs_data_set_default_string(s, "class_filter", "");
 
 	obs_data_set_default_int(s, "mask_kind", MASK_MOSAIC);
@@ -100,6 +105,7 @@ void config_load(Config &c, obs_data_t *s)
 	c.conf = (float)obs_data_get_double(s, "conf");
 	c.iou = (float)obs_data_get_double(s, "iou");
 	c.max_det = (int)obs_data_get_int(s, "max_det");
+	c.mask_limit = (int)obs_data_get_int(s, "mask_limit");
 	const char *cf = obs_data_get_string(s, "class_filter");
 	c.class_filter = cf ? cf : "";
 
@@ -118,7 +124,9 @@ void config_load(Config &c, obs_data_t *s)
 	c.debug_box = obs_data_get_bool(s, "debug_box");
 	c.debug_conf = obs_data_get_bool(s, "debug_conf");
 
-	c.det_fps = std::clamp(c.det_fps, 1, 30);
+	// 0 表示不推理；上限跟随显示器刷新率
+	c.det_fps = std::clamp(c.det_fps, kMinDetFps, display_max_refresh_hz());
+	c.mask_limit = std::clamp(c.mask_limit, 1, MaskFrame::kMax);
 	c.conf = std::clamp(c.conf, 0.01f, 0.99f);
 	c.iou = std::clamp(c.iou, 0.01f, 0.99f);
 	c.expand = std::clamp(c.expand, 0.0f, 0.30f);
@@ -130,6 +138,39 @@ bool config_needs_reload(const Config &a, const Config &b)
 	return a.model_path != b.model_path || a.device != b.device ||
 	       a.conf != b.conf || a.iou != b.iou || a.max_det != b.max_det ||
 	       a.class_filter != b.class_filter;
+}
+
+int display_max_refresh_hz()
+{
+	static int cached = 0;
+	if (cached > 0)
+		return cached;
+
+	int best = 0;
+#ifdef _WIN32
+	// 逐个适配器枚举全部显示模式，取最高刷新率。多显示器时取其中最大值，
+	// 因为滤镜挂哪个源在构建面板时未知。
+	DISPLAY_DEVICEW dd = {};
+	dd.cb = sizeof(dd);
+	for (DWORD i = 0; EnumDisplayDevicesW(nullptr, i, &dd, 0); ++i) {
+		if ((dd.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP) == 0)
+			continue;
+
+		DEVMODEW dm = {};
+		dm.dmSize = sizeof(dm);
+		for (DWORD m = 0; EnumDisplaySettingsW(dd.DeviceName, m, &dm); ++m) {
+			const int hz = (int)dm.dmDisplayFrequency;
+			if (hz > best && hz <= kMaxDetFpsCap)
+				best = hz;
+		}
+	}
+#endif
+	// 个别虚拟显示器把刷新率报成 0/1，此时退回 60
+	if (best <= 1)
+		best = 60;
+
+	cached = best;
+	return cached;
 }
 
 } // namespace guard

@@ -8,8 +8,13 @@ namespace guard {
 
 // 检测节拍
 constexpr int kDefaultDetFps = 10;
-constexpr int kMinDetFps = 1;
-constexpr int kMaxDetFps = 30;
+constexpr int kMinDetFps = 0; // 0 = 不推理，仅保留已有遮罩的淡出
+
+// 刷新率探测的兜底上限：个别虚拟显示器会报出异常大的值
+constexpr int kMaxDetFpsCap = 240;
+
+// 遮罩矩形数量：面板默认值，硬上限见 MaskFrame::kMax
+constexpr int kDefaultMaskLimit = 16;
 
 // 遮罩淡入时长：目标刚出现时避免突然跳出
 constexpr int64_t kFadeInNs = 60LL * 1000000LL;

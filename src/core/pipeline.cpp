@@ -234,6 +234,7 @@ void Pipeline::worker_main()
 		tp.expand = cfg.expand;
 		tp.hold_ms = cfg.hold_ms;
 		tp.fade_ms = cfg.fade_ms;
+		tp.max_masks = cfg.mask_limit;
 
 		MaskFrame mf;
 		tracker_.update(ok ? dets : std::vector<Detection>{}, frame.roi, t1, tp, mf);

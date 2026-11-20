@@ -112,10 +112,11 @@ obs_properties_t *build_properties(void *data, void *type_data)
 	add_section(p, "sec_basic", tr("Sec.Basic"));
 	obs_properties_add_bool(p, "enabled", tr("Enabled"));
 
-	obs_property_set_long_description(
-		obs_properties_add_int_slider(p, "det_fps", tr("DetFps"), kMinDetFps,
-					      kMaxDetFps, 1),
-		tr("DetFps.Desc"));
+	const int max_hz = display_max_refresh_hz();
+	obs_property_t *det_fps = obs_properties_add_int_slider(
+		p, "det_fps", tr("DetFps"), kMinDetFps, max_hz, 1);
+	obs_property_int_set_suffix(det_fps, " fps");
+	obs_property_set_long_description(det_fps, tr("DetFps.Desc"));
 
 	obs_property_set_long_description(
 		add_combo(p, "fail_mode", tr("FailMode"),
@@ -138,9 +139,13 @@ obs_properties_t *build_properties(void *data, void *type_data)
 		// 坐标下限为 0；宽高下限为 1，避免拖出零面积区域
 		const double minPct = (i < 2) ? 0.0 : 1.0;
 		const int minPx = (i < 2) ? 0 : 1;
-		obs_properties_add_float_slider(p, kRoiPercentKeys[i], labels[i], minPct, 100.0,
-						0.1);
-		obs_properties_add_int(p, kRoiPixelKeys[i], labels[i], minPx, kRoiPixelMax, 1);
+		obs_property_t *pct = obs_properties_add_float_slider(
+			p, kRoiPercentKeys[i], labels[i], minPct, 100.0, 0.1);
+		obs_property_float_set_suffix(pct, " %");
+
+		obs_property_t *px = obs_properties_add_int(
+			p, kRoiPixelKeys[i], labels[i], minPx, kRoiPixelMax, 1);
+		obs_property_int_set_suffix(px, " px");
 	}
 	obs_property_set_long_description(obs_properties_get(p, kRoiPercentKeys[0]),
 					  tr("RoiPct.Desc"));
@@ -166,7 +171,13 @@ obs_properties_t *build_properties(void *data, void *type_data)
 		tr("Conf.Desc"));
 
 	obs_properties_add_float_slider(p, "iou", tr("Iou"), 0.10, 0.95, 0.01);
-	obs_properties_add_int_slider(p, "max_det", tr("MaxDet"), 1, 64, 1);
+	obs_property_int_set_suffix(
+		obs_properties_add_int_slider(p, "max_det", tr("MaxDet"), 1, 64, 1), " 个");
+
+	obs_property_t *limit = obs_properties_add_int_slider(
+		p, "mask_limit", tr("MaskLimit"), 1, MaskFrame::kMax, 1);
+	obs_property_int_set_suffix(limit, " 个");
+	obs_property_set_long_description(limit, tr("MaskLimit.Desc"));
 
 	obs_property_set_long_description(
 		obs_properties_add_text(p, "class_filter", tr("ClassFilter"), OBS_TEXT_DEFAULT),
@@ -184,20 +195,29 @@ obs_properties_t *build_properties(void *data, void *type_data)
 
 	obs_properties_add_color(p, "mask_color", tr("MaskColor"));
 	obs_properties_add_float_slider(p, "mask_opacity", tr("MaskOpacity"), 0.05, 1.0, 0.01);
-	obs_property_set_visible(
-		obs_properties_add_float_slider(p, "blur_px", tr("BlurPx"), 2.0, 64.0, 1.0),
-		mask_kind == MASK_BLUR);
-	obs_property_set_visible(
-		obs_properties_add_float_slider(p, "block_px", tr("BlockPx"), 4.0, 64.0, 1.0),
-		mask_kind == MASK_MOSAIC);
+	obs_property_t *blur = obs_properties_add_float_slider(
+		p, "blur_px", tr("BlurPx"), 2.0, 64.0, 1.0);
+	obs_property_float_set_suffix(blur, " px");
+	obs_property_set_visible(blur, mask_kind == MASK_BLUR);
+
+	obs_property_t *block = obs_properties_add_float_slider(
+		p, "block_px", tr("BlockPx"), 4.0, 64.0, 1.0);
+	obs_property_float_set_suffix(block, " px");
+	obs_property_set_visible(block, mask_kind == MASK_MOSAIC);
 
 	obs_properties_add_float_slider(p, "expand", tr("Expand"), 0.0, 0.30, 0.01);
-	obs_properties_add_float_slider(p, "pad_px", tr("PadPx"), 0.0, 24.0, 1.0);
+	obs_property_float_set_suffix(
+		obs_properties_add_float_slider(p, "pad_px", tr("PadPx"), 0.0, 24.0, 1.0),
+		" px");
 
 	// ---------------- 平滑 ----------------
 	add_section(p, "sec_smooth", tr("Sec.Smooth"));
-	obs_properties_add_int_slider(p, "hold_ms", tr("HoldMs"), 0, 1000, 10);
-	obs_properties_add_int_slider(p, "fade_ms", tr("FadeMs"), 0, 800, 10);
+	obs_property_int_set_suffix(
+		obs_properties_add_int_slider(p, "hold_ms", tr("HoldMs"), 0, 1000, 10),
+		" ms");
+	obs_property_int_set_suffix(
+		obs_properties_add_int_slider(p, "fade_ms", tr("FadeMs"), 0, 800, 10),
+		" ms");
 
 	// ---------------- 诊断 ----------------
 	add_section(p, "sec_debug", tr("Sec.Debug"));

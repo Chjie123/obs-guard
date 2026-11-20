@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string>
 
+#include "core/constants.h"
 #include "core/types.h"
 
 namespace guard {
@@ -43,7 +44,8 @@ struct Config {
 	float conf = 0.35f;
 	float iou = 0.45f;
 	int max_det = 32;
-	std::string class_filter; // 空 = 全部类别
+	int mask_limit = kDefaultMaskLimit; // 实际绘制的遮罩矩形上限
+	std::string class_filter;           // 空 = 全部类别
 
 	// ---- 遮罩样式 ----
 	int mask_kind = MASK_MOSAIC;
@@ -72,5 +74,9 @@ void config_load(Config &cfg, obs_data_t *settings);
 
 // 只比较「需要重建推理会话」的字段
 bool config_needs_reload(const Config &a, const Config &b);
+
+// 当前显示器支持的最高刷新率，作为「检测频率」滑块的上限。
+// 探测失败（虚拟机 / 远程桌面）时返回 60。
+int display_max_refresh_hz();
 
 } // namespace guard

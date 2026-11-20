@@ -16,6 +16,7 @@ struct TrackerParams {
 	int hold_ms = 300;
 	int fade_ms = 180;
 	int confirm_hits = 3;
+	int max_masks = MaskFrame::kMax; // 本次最多输出多少个遮罩
 };
 
 struct TrackState {

@@ -30,11 +30,12 @@ namespace {
 void pump_frame(GuardFilter *f, obs_source_t *target, const Config &cfg, const RoiRect &roi,
 		int64_t now)
 {
-	if (!cfg.enabled || !roi.valid() || f->in_grab || !f->pipeline->ready())
+	// 检测频率为 0 表示只保留已有遮罩的淡出，不再取帧推理
+	if (!cfg.enabled || cfg.det_fps <= 0 || !roi.valid() || f->in_grab ||
+	    !f->pipeline->ready())
 		return;
 
-	const int fps = cfg.det_fps > 0 ? cfg.det_fps : kDefaultDetFps;
-	const int64_t interval = 1000000000LL / fps;
+	const int64_t interval = 1000000000LL / cfg.det_fps;
 	if (now - f->last_grab_ns < interval)
 		return;
 	f->last_grab_ns = now;

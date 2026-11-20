@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(obs-guard VERSION 0.1.2 LANGUAGES C CXX)
+project(obs-guard VERSION 0.1.3 LANGUAGES C CXX)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
@@ -172,6 +172,9 @@ else()
 endif()
 
 if(WIN32)
+	# 检测频率上限需要枚举显示模式（EnumDisplayDevices / EnumDisplaySettings）
+	target_link_libraries(obs-guard PRIVATE user32)
+
 	set_target_properties(obs-guard PROPERTIES
 		PREFIX ""
 		OUTPUT_NAME "obs-guard"

@@ -35,7 +35,9 @@ struct MaskCmd {
 
 // 推理线程 → 渲染线程 的一帧结果。渲染线程只做 try_lock，绝不等锁。
 struct MaskFrame {
-	static constexpr int kMax = 16;
+	// 硬上限，与 guard_mask.effect 的槽位数一一对应。
+	// 实际绘制数量由「遮罩矩形上限」配置决定，取两者较小值。
+	static constexpr int kMax = 32;
 
 	int count = 0;
 	MaskCmd items[kMax];

@@ -2,6 +2,8 @@
 
 #include <obs-module.h>
 
+#include "core/config.h"
+
 OBS_DECLARE_MODULE()
 
 // 定义插件自己的 obs_module_text / obs_module_set_locale 等符号。
@@ -17,7 +19,8 @@ bool obs_module_load(void)
 {
 	guard::register_guard_filter();
 	blog(LOG_INFO, "[obs-guard] 插件已加载 v" GUARD_VERSION
-		       "（滤镜：违禁内容遮挡）");
+		       "（滤镜：违禁内容遮挡，检测频率上限 %d fps）",
+	     guard::display_max_refresh_hz());
 	return true;
 }
 

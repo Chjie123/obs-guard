@@ -129,8 +129,9 @@ void Tracker::update(const std::vector<Detection> &dets, const RoiRect &roi, int
 	});
 
 	const float ex = p.expand;
+	const int limit = std::clamp(p.max_masks, 1, MaskFrame::kMax);
 	for (const auto *t : order) {
-		if (out.count >= MaskFrame::kMax)
+		if (out.count >= limit)
 			break;
 
 		float w = t->w * (1.0f + ex * 2.0f);
