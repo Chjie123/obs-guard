@@ -16,6 +16,7 @@ param(
     [string]$BuildDir = "build_x64-nmake",
     [string]$OutDir   = "dist",
     [string]$Version,
+    [string]$OrtRoot,
     [switch]$SkipBuild,
     [switch]$NoOrt
 )
@@ -45,6 +46,7 @@ if (-not $SkipBuild) {
     $sdk = Join-Path $root "sdk"
     if (Test-Path (Join-Path $sdk "lib\obs.lib")) { $buildArgs.SdkDir = $sdk }
     if ($NoOrt) { $buildArgs.NoOrt = $true }
+    if ($OrtRoot) { $buildArgs.OrtRoot = $OrtRoot }
     & (Join-Path $root "scripts\build.ps1") @buildArgs
     if ($LASTEXITCODE -ne 0) { Fail "build failed" }
 }
@@ -61,6 +63,14 @@ if (-not (Test-Path $srcData)) { Fail "data dir not found: $srcData" }
 $stage = Join-Path $root (Join-Path $OutDir "obs-guard-$Version")
 $pPlugin = Join-Path $stage "obs-plugins\64bit"
 $pData = Join-Path $stage "data\obs-plugins\obs-guard"
+
+# Drop binaries left by a previous packaging run; otherwise a renamed runtime
+# would ship twice (old and new name) in the same archive.
+if (Test-Path $pPlugin) {
+    foreach ($stale in @(Get-ChildItem $pPlugin -Filter *.dll -ErrorAction SilentlyContinue)) {
+        Remove-Item $stale.FullName -Force -ErrorAction SilentlyContinue
+    }
+}
 New-Item -ItemType Directory -Force -Path $pPlugin, $pData | Out-Null
 
 # plugin + any runtime DLLs sitting next to it (onnxruntime, DirectML)

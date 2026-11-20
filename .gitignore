@@ -29,3 +29,7 @@ out/
 __pycache__/
 *.py[cod]
 .venv/
+
+# 模型权重：体积大且受上游许可约束，不入库
+tools/*.onnx
+tools/*.pt

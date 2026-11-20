@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(obs-guard VERSION 0.1.0 LANGUAGES C CXX)
+project(obs-guard VERSION 0.1.2 LANGUAGES C CXX)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
@@ -84,21 +84,43 @@ set(ORT_DLLS "")
 
 if(GUARD_WITH_ORT)
 	if(NOT ONNXRUNTIME_ROOT)
-		include(FetchContent)
-		FetchContent_Declare(
-			onnxruntime
-			URL https://github.com/microsoft/onnxruntime/releases/download/v1.19.2/onnxruntime-win-x64-directml-1.19.2.zip
-			DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
-		FetchContent_MakeAvailable(onnxruntime)
-		set(ONNXRUNTIME_ROOT "${onnxruntime_SOURCE_DIR}")
+		# 官方 releases 已不再为每个版本提供 Windows zip 资产，改由 script 从 NuGet 装配
+		message(FATAL_ERROR
+			"ONNXRUNTIME_ROOT 未设置。\n"
+			"  1) 运行 .\\tools\\fetch-ort.ps1 生成 sdk\\ort\n"
+			"  2) 重新配置时传 -DONNXRUNTIME_ROOT=sdk/ort，或用 scripts\\build.ps1 -OrtRoot\n"
+			"  3) 只想验证渲染链路时改用 -NoOrt")
 	endif()
 
 	if(NOT EXISTS "${ONNXRUNTIME_ROOT}/include/onnxruntime_cxx_api.h")
 		message(FATAL_ERROR "ONNXRUNTIME_ROOT 无效：${ONNXRUNTIME_ROOT}")
 	endif()
 
-	file(GLOB ORT_DLLS "${ONNXRUNTIME_ROOT}/lib/*.dll" "${ONNXRUNTIME_ROOT}/*.dll")
-	message(STATUS "obs-guard: ONNX Runtime -> ${ONNXRUNTIME_ROOT}")
+	# 运行库改名后重新生成导入库。
+	# 原因：Windows 的延迟加载按“文件名”解析，若进程里已存在同名模块（例如某个
+	# 软件把旧版 onnxruntime.dll 装进了 System32），会直接复用它，导致
+	# OrtGetApiBase()->GetApi(ORT_API_VERSION) 返回空指针并崩溃。
+	# 改成唯一文件名后，解析结果只可能是随插件分发的这一份。
+	set(ORT_DLL_NAME "obs_guard_ort")
+	set(ORT_DEF "${CMAKE_CURRENT_BINARY_DIR}/${ORT_DLL_NAME}.def")
+	set(ORT_IMPLIB "${CMAKE_CURRENT_BINARY_DIR}/${ORT_DLL_NAME}.lib")
+
+	file(WRITE "${ORT_DEF}"
+		"LIBRARY ${ORT_DLL_NAME}.dll\n"
+		"EXPORTS\n"
+		"    OrtGetApiBase\n"
+		"    OrtSessionOptionsAppendExecutionProvider_DML\n")
+
+	add_custom_command(
+		OUTPUT "${ORT_IMPLIB}"
+		COMMAND "${CMAKE_AR}" /nologo "/def:${ORT_DEF}" /machine:x64 "/out:${ORT_IMPLIB}"
+		DEPENDS "${ORT_DEF}"
+		VERBATIM
+		COMMENT "生成 ${ORT_DLL_NAME}.lib")
+
+	add_custom_target(obs_guard_ort_implib DEPENDS "${ORT_IMPLIB}")
+
+	message(STATUS "obs-guard: ONNX Runtime -> ${ONNXRUNTIME_ROOT} (runtime renamed to ${ORT_DLL_NAME}.dll)")
 endif()
 
 # ---------------------------------------------------------------------------
@@ -107,21 +129,26 @@ endif()
 set(GUARD_SOURCES
 	src/plugin-main.cpp
 	src/filter/filter.cpp
+	src/filter/properties.cpp
 	src/core/config.cpp
 	src/core/pipeline.cpp
 	src/core/tracker.cpp
 	src/capture/grabber.cpp
 	src/detect/detector_ort.cpp
+	src/detect/yolo_post.cpp
 	src/render/renderer.cpp)
 
 set(GUARD_HEADERS
 	src/filter/filter.h
+	src/filter/filter_internal.h
 	src/core/types.h
+	src/core/constants.h
 	src/core/config.h
 	src/core/pipeline.h
 	src/core/tracker.h
 	src/capture/grabber.h
 	src/detect/detector.h
+	src/detect/yolo_post.h
 	src/render/renderer.h)
 
 add_library(obs-guard MODULE ${GUARD_SOURCES} ${GUARD_HEADERS})
@@ -154,20 +181,24 @@ endif()
 if(GUARD_WITH_ORT)
 	target_compile_definitions(obs-guard PRIVATE GUARD_WITH_ORT=1)
 	target_include_directories(obs-guard PRIVATE "${ONNXRUNTIME_ROOT}/include")
-	target_link_libraries(obs-guard PRIVATE "${ONNXRUNTIME_ROOT}/lib/onnxruntime.lib")
+
+	add_dependencies(obs-guard obs_guard_ort_implib)
+	target_link_libraries(obs-guard PRIVATE "${ORT_IMPLIB}")
 
 	if(MSVC)
 		# 插件目录不在默认 DLL 搜索路径里，改为延迟加载 + 运行时显式预加载
-		target_link_options(obs-guard PRIVATE "/DELAYLOAD:onnxruntime.dll")
+		target_link_options(obs-guard PRIVATE "/DELAYLOAD:${ORT_DLL_NAME}.dll")
 		target_link_libraries(obs-guard PRIVATE delayimp)
 	endif()
 
-	if(ORT_DLLS)
-		add_custom_command(TARGET obs-guard POST_BUILD
-			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ORT_DLLS}
-				"$<TARGET_FILE_DIR:obs-guard>"
-			COMMENT "复制 ONNX Runtime 运行库")
-	endif()
+	add_custom_command(TARGET obs-guard POST_BUILD
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"${ONNXRUNTIME_ROOT}/lib/onnxruntime.dll"
+			"$<TARGET_FILE_DIR:obs-guard>/${ORT_DLL_NAME}.dll"
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"${ONNXRUNTIME_ROOT}/lib/DirectML.dll"
+			"$<TARGET_FILE_DIR:obs-guard>/DirectML.dll"
+		COMMENT "复制 ONNX Runtime 运行库（重命名为 ${ORT_DLL_NAME}.dll）")
 endif()
 
 # ---------------------------------------------------------------------------
@@ -188,6 +219,10 @@ install(TARGETS obs-guard
 
 install(DIRECTORY data/ DESTINATION "data/obs-plugins/obs-guard")
 
-if(ORT_DLLS)
-	install(FILES ${ORT_DLLS} DESTINATION "obs-plugins/64bit")
+if(GUARD_WITH_ORT)
+	install(FILES "${ONNXRUNTIME_ROOT}/lib/onnxruntime.dll"
+		DESTINATION "obs-plugins/64bit"
+		RENAME "${ORT_DLL_NAME}.dll")
+	install(FILES "${ONNXRUNTIME_ROOT}/lib/DirectML.dll"
+		DESTINATION "obs-plugins/64bit")
 endif()

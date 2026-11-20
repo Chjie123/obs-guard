@@ -44,13 +44,21 @@ obs-guard 的处理方式是**事前遮挡**：在编码前识别目标，就地
 .\install.ps1 -ObsDir "D:\obs-studio"
 ```
 
+若当前账户没有管理员权限，可改装到用户目录，OBS 28 及以上会自动扫描该路径：
+
+```powershell
+.\install.cmd -User
+```
+
+对应的目录为 `%APPDATA%\obs-studio\plugins\obs-guard\`（`bin\64bit` 放 DLL，`data` 放资源）。同一份插件只会被加载一次，安装脚本会自动清理另一位置上的旧副本；无法清理时会给出提示。
+
 ### 3.2 手动安装
 
 分发包采用 OBS 标准目录结构，将 `obs-plugins` 与 `data` 两个目录整体覆盖到 OBS 安装目录即可（默认 `C:\Program Files\obs-studio`）。
 
 ### 3.3 卸载
 
-双击 `uninstall.cmd`。安装时生成的文件清单位于 `obs-plugins\64bit\obs-guard.manifest.txt`，卸载按该清单执行，不影响其他插件。
+双击 `uninstall.cmd`。脚本会同时检查机器级与用户级两个位置，按安装清单删除已落地的文件，不影响其他插件。
 
 ---
 
@@ -80,6 +88,8 @@ obs-guard 的处理方式是**事前遮挡**：在编码前识别目标，就地
 ---
 
 ## 5. 参数
+
+面板每一项的完整说明（取值、默认值、调参依据、排障顺序、配置键对照）见 [docs/filter-panel.md](docs/filter-panel.md)；本节为速查表。
 
 ### 5.1 检测
 
@@ -130,6 +140,20 @@ obs-guard 的处理方式是**事前遮挡**：在编码前识别目标，就地
 | 目标消失后保持 | 300 ms | 抵住检测间隔造成的闪烁 |
 | 淡出时长 | 180 ms | 保持结束后的过渡时间 |
 
+### 5.6 诊断
+
+| 参数 | 默认值 | 说明 |
+|---|---|---|
+| 显示检测区域边框 | 关闭 | 在画面上用品红框标出实际送检区域 |
+| 显示命中框 | 关闭 | 用绿框标出每个命中目标，不依赖遮罩样式 |
+| 显示置信度 | 关闭 | 在命中框左上角叠加两位数读数，数值为置信度 ×100 |
+| 推理状态 | — | 显示后端、输入尺寸与类别数；点击「刷新状态」更新 |
+| 测试遮罩 | — | 在当前检测区域叠加 3 秒样本遮罩，不依赖模型 |
+
+> 三项显示开关都会进入输出画面（即直播/录制内容）。仅用于排障，正式推流前应关闭。
+
+排查「有模型但画面没有变化」时，建议按此顺序确认：先看「推理状态」是否为 `DirectML · HxW · N 类`；再打开「显示命中框」，有绿框说明检测生效、问题在遮罩样式；连绿框都没有则说明检测未命中，可临时调低「置信度阈值」并清空「目标类别」再试。
+
 ---
 
 ## 6. 模型准备
@@ -168,14 +192,19 @@ python tools/export_onnx.py --weights yolo11s.pt --imgsz 384x640 --check
 # 1. 从已安装的 OBS 生成 SDK（头文件 + obs.lib）
 .\tools\fetch-obs-sdk.ps1
 
-# 2. 构建
-.\scripts\build.ps1 -SdkDir .\sdk -NoOrt
+# 2. 取推理运行库（ONNX Runtime + DirectML，来自 NuGet）
+.\tools\fetch-ort.ps1
 
-# 3. 打包
-.\scripts\package.ps1
+# 3. 构建
+.\scripts\build.ps1 -SdkDir .\sdk -OrtRoot .\sdk\ort
+
+# 4. 打包
+.\scripts\package.ps1 -OrtRoot .\sdk\ort
 ```
 
-`-NoOrt` 用于跳过 ONNX Runtime 下载，构建产物不含推理后端，适合先验证渲染链路。去掉该参数即构建完整版本，ONNX Runtime（DirectML 版）由 CMake 首次配置时自动获取，约 100 MB。
+只想先验证渲染链路、不接模型时，构建时加 `-NoOrt` 并跳过第 2 步，产物不含推理后端，体积从 32 MB 降到 0.4 MB。
+
+ONNX Runtime 通过 `tools\fetch-ort.ps1` 从 NuGet 官方包 `Microsoft.ML.OnnxRuntime.DirectML` 与 `Microsoft.AI.DirectML` 装配到 `sdk\ort`。该项目录已被 `.gitignore` 排除。
 
 构建脚本优先使用 Visual Studio 生成器；若环境中不存在已注册的 VS 实例，会自动切换至 NMake 并手工装配 MSVC 与 Windows SDK 环境变量。
 
@@ -189,6 +218,18 @@ build_x64\rundir\
 
 `scripts\deploy.ps1` 可将产物直接部署到本机 OBS（需要管理员权限，且 OBS 需处于关闭状态）。
 
+### 7.4 回归测试
+
+`tests\yolo_decode_test.cpp` 覆盖输出布局识别、NMS 与 letterbox 回映射，不依赖 OBS 与 ONNX Runtime：
+
+```powershell
+cl /nologo /utf-8 /std:c++17 /EHsc /MD /I src tests\yolo_decode_test.cpp `
+   src\detect\yolo_post.cpp /Fe:yolo_decode_test.exe
+.\yolo_decode_test.exe
+```
+
+修改 `decode_yolo_output` 后应运行一次。若全部用例通过，末行输出 `ALL PASS (0 failures)`。
+
 ---
 
 ## 8. 目录结构
@@ -197,18 +238,19 @@ build_x64\rundir\
 obs-guard/
 ├─ src/
 │  ├─ plugin-main.cpp        模块入口与注册
-│  ├─ filter/                滤镜实体：obs_source_info、属性面板、渲染入口
-│  ├─ core/                  数据契约、配置、推理线程、跟踪与状态机
+│  ├─ filter/                滤镜实体与属性面板
+│  ├─ core/                  数据契约、常量、配置、推理线程、跟踪与状态机
 │  ├─ capture/               检测区域取帧与缩放
-│  ├─ detect/                ONNX Runtime 检测器
-│  └─ render/                遮罩合成
+│  ├─ detect/                推理会话与输出后处理
+│  ├─ render/                遮罩合成
 ├─ data/
 │  ├─ effects/               遮罩着色器
 │  └─ locale/                中英文语言包
 ├─ packaging/                分发包内的安装与卸载脚本
 ├─ scripts/                  构建、打包、部署
+├─ tests/                    输出解码的回归测试（不依赖 OBS）
 ├─ tools/                    模型导出、OBS SDK 生成
-└─ docs/                     架构说明与安装须知
+└─ docs/                     架构说明、面板参数说明与安装须知
 ```
 
 ---

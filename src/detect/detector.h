@@ -1,4 +1,4 @@
-// guard-detector.h -- 检测器抽象
+// detect/detector.h -- 检测器抽象
 // 规划 §5.3 要求：检测器统一抽象为 IDetector，与推理框架解耦，
 // 后续换 TensorRT / YOLOX / RT-DETR 只替换实现，不动上层。
 #pragma once

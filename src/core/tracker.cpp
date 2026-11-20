@@ -36,7 +36,6 @@ void Tracker::update(const std::vector<Detection> &dets, const RoiRect &roi, int
 		     const TrackerParams &p, MaskFrame &out)
 {
 	out.count = 0;
-	out.panic = false;
 	out.stamp = now;
 
 	// ROI 内归一化 → 帧归一化
@@ -156,7 +155,6 @@ void Tracker::update(const std::vector<Detection> &dets, const RoiRect &roi, int
 		c.score = t->score;
 		c.first_seen = t->first_ns;
 		c.last_seen = t->last_ns;
-		c.track_id = t->id;
 	}
 }
 

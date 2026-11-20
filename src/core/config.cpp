@@ -75,6 +75,7 @@ void config_defaults(obs_data_t *s)
 
 	obs_data_set_default_bool(s, "debug_roi", false);
 	obs_data_set_default_bool(s, "debug_box", false);
+	obs_data_set_default_bool(s, "debug_conf", false);
 }
 
 void config_load(Config &c, obs_data_t *s)
@@ -115,6 +116,7 @@ void config_load(Config &c, obs_data_t *s)
 
 	c.debug_roi = obs_data_get_bool(s, "debug_roi");
 	c.debug_box = obs_data_get_bool(s, "debug_box");
+	c.debug_conf = obs_data_get_bool(s, "debug_conf");
 
 	c.det_fps = std::clamp(c.det_fps, 1, 30);
 	c.conf = std::clamp(c.conf, 0.01f, 0.99f);

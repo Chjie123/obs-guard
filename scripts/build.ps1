@@ -14,6 +14,7 @@ param(
     [string]$ObsSourceDir = $env:OBS_SOURCE_DIR,
     [string]$ObsBuildDir  = $env:OBS_BUILD_DIR,
     [string]$SdkDir       = $env:OBS_SDK_DIR,
+    [string]$OrtRoot      = $env:ONNXRUNTIME_ROOT,
     [string]$Config       = "RelWithDebInfo",
     [string]$BuildDir     = "build_x64",
     [ValidateSet("auto", "vs", "nmake")]
@@ -94,7 +95,10 @@ function Invoke-Configure($generator, $dir) {
     if ($ObsSourceDir) { $a += @("-DOBS_SOURCE_DIR=$ObsSourceDir") }
     if ($ObsBuildDir)  { $a += @("-DOBS_BUILD_DIR=$ObsBuildDir") }
     if ($SdkDir)       { $a += @("-DOBS_SDK_DIR=$SdkDir") }
-    if ($NoOrt)        { $a += @("-DGUARD_WITH_ORT=OFF") }
+    # Pass the flag explicitly: a previous -NoOrt run would otherwise leave
+    # OFF in the CMake cache and every later build would silently follow it.
+    if ($NoOrt) { $a += @("-DGUARD_WITH_ORT=OFF") } else { $a += @("-DGUARD_WITH_ORT=ON") }
+    if ($OrtRoot) { $a += @("-DONNXRUNTIME_ROOT=$OrtRoot") }
 
     Write-Host "[*] cmake $($a -join ' ')" -ForegroundColor Cyan
     $old = $ErrorActionPreference

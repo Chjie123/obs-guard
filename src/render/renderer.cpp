@@ -1,5 +1,7 @@
 #include "render/renderer.h"
 
+#include "core/constants.h"
+
 #include <graphics/vec2.h>
 #include <graphics/vec3.h>
 #include <graphics/vec4.h>
@@ -49,8 +51,6 @@ technique Draw
 }
 )";
 
-constexpr int64_t kFadeInNs = 60LL * 1000000LL;
-
 } // namespace
 
 bool Renderer::init(std::string &err)
@@ -94,6 +94,7 @@ bool Renderer::init(std::string &err)
 	p_roi = gs_effect_get_param_by_name(effect_, "roi_rect");
 	p_roi_on = gs_effect_get_param_by_name(effect_, "roi_on");
 	p_box_on = gs_effect_get_param_by_name(effect_, "box_on");
+	p_conf_on = gs_effect_get_param_by_name(effect_, "conf_on");
 
 	for (int i = 0; i < MaskFrame::kMax; ++i) {
 		char name[8];
@@ -101,12 +102,14 @@ bool Renderer::init(std::string &err)
 		p_m[i] = gs_effect_get_param_by_name(effect_, name);
 		snprintf(name, sizeof(name), "f%d", i);
 		p_f[i] = gs_effect_get_param_by_name(effect_, name);
+		snprintf(name, sizeof(name), "s%d", i);
+		p_s[i] = gs_effect_get_param_by_name(effect_, name);
 	}
 
 	// 任一必需参数缺失（特效文件被改坏 / 版本不匹配）就退回兜底，避免空指针
 	const bool ok = p_texel && p_pad && p_feather && p_color && p_opacity && p_style &&
 			p_blur && p_block && p_count && p_sec && p_roi && p_roi_on &&
-			p_box_on && p_m[0] && p_f[0];
+			p_box_on && p_conf_on && p_m[0] && p_f[0] && p_s[0];
 	if (!ok) {
 		err = "guard_mask.effect 缺少必需的 uniform 参数";
 		blog(LOG_ERROR, "[obs-guard] %s", err.c_str());
@@ -132,7 +135,7 @@ void Renderer::destroy()
 	std::memset(p_f, 0, sizeof(p_f));
 }
 
-void Renderer::set_mask(int i, float x, float y, float w, float h, float fade)
+void Renderer::set_mask(int i, float x, float y, float w, float h, float fade, float score)
 {
 	if (!p_m[i] || !p_f[i])
 		return;
@@ -140,12 +143,14 @@ void Renderer::set_mask(int i, float x, float y, float w, float h, float fade)
 	vec4_set(&r, x, y, w, h);
 	gs_effect_set_vec4(p_m[i], &r);
 	gs_effect_set_float(p_f[i], fade);
+	if (p_s[i])
+		gs_effect_set_float(p_s[i], score);
 }
 
 void Renderer::clear_masks()
 {
 	for (int i = 0; i < MaskFrame::kMax; ++i)
-		set_mask(i, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+		set_mask(i, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
 }
 
 void Renderer::draw(obs_source_t *context, uint32_t w, uint32_t h, const Config &cfg,
@@ -207,13 +212,14 @@ void Renderer::draw(obs_source_t *context, uint32_t w, uint32_t h, const Config 
 	gs_effect_set_vec4(p_roi, &roi_r);
 	gs_effect_set_float(p_roi_on, cfg.debug_roi ? 1.0f : 0.0f);
 	gs_effect_set_float(p_box_on, cfg.debug_box ? 1.0f : 0.0f);
+	gs_effect_set_float(p_conf_on, cfg.debug_conf ? 1.0f : 0.0f);
 
 	clear_masks();
 
 	int n = 0;
 	if (test_mode) {
 		// 自检：用一条满 ROI 的样本验证取景与样式
-		set_mask(0, roi.x, roi.y, roi.w, roi.h, 1.0f);
+		set_mask(0, roi.x, roi.y, roi.w, roi.h, 1.0f, 0.0f);
 		n = 1;
 	} else if (mask.count > 0) {
 		const int64_t hold_ns = (int64_t)std::max(0, cfg.hold_ms) * 1000000LL;
@@ -236,7 +242,7 @@ void Renderer::draw(obs_source_t *context, uint32_t w, uint32_t h, const Config 
 			if (fade <= 0.002f)
 				continue;
 
-			set_mask(n, m.x, m.y, m.w, m.h, fade);
+			set_mask(n, m.x, m.y, m.w, m.h, fade, m.score);
 			++n;
 		}
 	}

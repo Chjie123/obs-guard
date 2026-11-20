@@ -1,4 +1,4 @@
-// guard-renderer.h -- 遮罩绘制（单 pass，渲染线程内耗时目标 ≤2ms）
+// render/renderer.h -- 遮罩绘制（单 pass，渲染线程内耗时目标 ≤2ms）
 #pragma once
 
 #include <graphics/graphics.h>
@@ -39,10 +39,12 @@ private:
 	gs_eparam_t *p_roi = nullptr;
 	gs_eparam_t *p_roi_on = nullptr;
 	gs_eparam_t *p_box_on = nullptr;
+	gs_eparam_t *p_conf_on = nullptr;
 	gs_eparam_t *p_m[MaskFrame::kMax] = {};
 	gs_eparam_t *p_f[MaskFrame::kMax] = {};
+	gs_eparam_t *p_s[MaskFrame::kMax] = {};
 
-	void set_mask(int i, float x, float y, float w, float h, float fade);
+	void set_mask(int i, float x, float y, float w, float h, float fade, float score);
 	void clear_masks();
 };
 

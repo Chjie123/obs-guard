@@ -82,13 +82,13 @@ video_render()
 
 | 目录 | 职责 | 关键点 |
 |---|---|---|
-| `src/filter/` | 滤镜实体：属性面板、生命周期、渲染入口 | 唯一持有 OBS 上下文的位置 |
-| `src/core/` | 数据契约、配置、推理线程、跟踪 | 不直接调用图形接口 |
+| `src/filter/` | 滤镜实体与属性面板 | `filter.cpp` 持有 OBS 上下文；`properties.cpp` 只构建界面，不参与渲染 |
+| `src/core/` | 数据契约、常量、配置、推理线程、跟踪 | `types.h` 是唯一的跨模块契约；`constants.h` 收拢全局数值 |
 | `src/capture/` | 检测区域取帧与缩放 | 唯一进行 GPU 回读的位置 |
-| `src/detect/` | ONNX Runtime 检测器 | 对上层仅暴露 `IDetector` |
+| `src/detect/` | 推理会话与输出后处理 | `detector_ort.cpp` 只管会话与张量；`yolo_post.cpp` 负责解码、NMS、坐标回映射，可脱离推理框架单独验证 |
 | `src/render/` | 遮罩合成 | 唯一持有着色器与 uniform 的位置 |
 
-模块之间只通过 `src/core/types.h` 中的结构体通信，不做跨模块直接调用。
+模块之间只通过 `src/core/types.h` 中的结构体通信，不做跨模块直接调用。属性面板与后处理之所以独立成文件，是因为二者变更频率最高，且都不应牵动渲染路径。
 
 ---
 

@@ -1,4 +1,4 @@
-// guard-pipeline.h -- 推理线程 + 帧邮箱 + 结果发布
+// core/pipeline.h -- 推理线程 + 帧邮箱 + 结果发布
 // 关键约束（规划 §2.3 / §8.2）：
 //   - 渲染线程绝不等待推理：投递不加锁阻塞，取结果用 try_lock，失败就复用上一帧
 //   - 只保最新帧：渲染快于推理时丢旧帧，延迟不累积
@@ -64,6 +64,8 @@ private:
 	// 线程内独占
 	std::unique_ptr<IDetector> detector_;
 	Tracker tracker_;
+	int dbg_counter_ = 0;    // 仅推理线程访问
+	int last_pub_count_ = 0; // 仅推理线程访问，用于命中/消失的状态跃迁日志
 
 	std::atomic<int> model_w_{640};
 	std::atomic<int> model_h_{384};

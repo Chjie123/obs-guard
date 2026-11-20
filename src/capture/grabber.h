@@ -1,4 +1,4 @@
-// guard-grabber.h -- 把ROI从GPU纹理取回CPU，并缩放到模型输入尺寸
+// capture/grabber.h -- 把ROI从GPU纹理取回CPU，并缩放到模型输入尺寸
 #pragma once
 
 #include <graphics/graphics.h>

@@ -1,4 +1,4 @@
-// guard-config.h -- 插件配置模型 + obs_data 读写
+// core/config.h -- 插件配置模型 + obs_data 读写
 #pragma once
 
 #include <obs-module.h>
@@ -61,6 +61,7 @@ struct Config {
 	// ---- 调试 ----
 	bool debug_roi = false;
 	bool debug_box = false;
+	bool debug_conf = false; // 在命中框上叠加置信度读数
 
 	// ROI 换成归一化矩形（相对输入帧）
 	RoiRect roi_rect(uint32_t src_w, uint32_t src_h) const;

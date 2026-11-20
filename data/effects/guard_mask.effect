@@ -19,26 +19,27 @@ uniform float2 block_uv;
 uniform float  count;
 uniform float  sec;          // 秒，可用于呼吸/闪烁（保留）
 
-uniform float4 m0;  uniform float f0;
-uniform float4 m1;  uniform float f1;
-uniform float4 m2;  uniform float f2;
-uniform float4 m3;  uniform float f3;
-uniform float4 m4;  uniform float f4;
-uniform float4 m5;  uniform float f5;
-uniform float4 m6;  uniform float f6;
-uniform float4 m7;  uniform float f7;
-uniform float4 m8;  uniform float f8;
-uniform float4 m9;  uniform float f9;
-uniform float4 m10; uniform float f10;
-uniform float4 m11; uniform float f11;
-uniform float4 m12; uniform float f12;
-uniform float4 m13; uniform float f13;
-uniform float4 m14; uniform float f14;
-uniform float4 m15; uniform float f15;
+uniform float4 m0;  uniform float f0;  uniform float s0;
+uniform float4 m1;  uniform float f1;  uniform float s1;
+uniform float4 m2;  uniform float f2;  uniform float s2;
+uniform float4 m3;  uniform float f3;  uniform float s3;
+uniform float4 m4;  uniform float f4;  uniform float s4;
+uniform float4 m5;  uniform float f5;  uniform float s5;
+uniform float4 m6;  uniform float f6;  uniform float s6;
+uniform float4 m7;  uniform float f7;  uniform float s7;
+uniform float4 m8;  uniform float f8;  uniform float s8;
+uniform float4 m9;  uniform float f9;  uniform float s9;
+uniform float4 m10; uniform float f10; uniform float s10;
+uniform float4 m11; uniform float f11; uniform float s11;
+uniform float4 m12; uniform float f12; uniform float s12;
+uniform float4 m13; uniform float f13; uniform float s13;
+uniform float4 m14; uniform float f14; uniform float s14;
+uniform float4 m15; uniform float f15; uniform float s15;
 
 uniform float4 roi_rect;
 uniform float  roi_on;
 uniform float  box_on;
+uniform float  conf_on;
 
 sampler_state linear_sampler {
 	AddressU = Clamp;
@@ -127,6 +128,94 @@ float4 outline(float4 col, float4 r, float2 uv, float3 tint)
 	return float4(lerp(col.rgb, tint, 0.9), col.a);
 }
 
+// ---------------------------------------------------------------------------
+// 置信度读数
+//
+// OBS 的滤镜面板无法实时刷新文本，数值只能叠加到画面上。这里用一个 7 段
+// 数码管画两位数（00..99，即置信度 *100），代价远低于引入字体纹理。
+// ---------------------------------------------------------------------------
+
+// 段位掩码：bit0 上 / bit1 右上 / bit2 右下 / bit3 下 / bit4 左下 / bit5 左上 / bit6 中
+int digit_segments(int d)
+{
+	if (d == 0) return 63;
+	if (d == 1) return 6;
+	if (d == 2) return 91;
+	if (d == 3) return 79;
+	if (d == 4) return 102;
+	if (d == 5) return 109;
+	if (d == 6) return 125;
+	if (d == 7) return 7;
+	if (d == 8) return 127;
+	return 111;
+}
+
+// q：数字单元格内坐标 0..1；t：笔画粗细（相对单元格）
+float digit_alpha(float2 q, int d, float t)
+{
+	if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0)
+		return 0.0;
+
+	int m = digit_segments(d);
+	float a = 0.0;
+
+	if (((m >> 0) & 1) == 1 && q.y < t && q.x > t && q.x < 1.0 - t)
+		a = 1.0;
+	if (((m >> 6) & 1) == 1 && abs(q.y - 0.5) < t * 0.5 && q.x > t && q.x < 1.0 - t)
+		a = 1.0;
+	if (((m >> 3) & 1) == 1 && q.y > 1.0 - t && q.x > t && q.x < 1.0 - t)
+		a = 1.0;
+	if (((m >> 5) & 1) == 1 && q.x < t && q.y > t * 0.8 && q.y < 0.5 - t * 0.4)
+		a = 1.0;
+	if (((m >> 1) & 1) == 1 && q.x > 1.0 - t && q.y > t * 0.8 && q.y < 0.5 - t * 0.4)
+		a = 1.0;
+	if (((m >> 4) & 1) == 1 && q.x < t && q.y > 0.5 + t * 0.4 && q.y < 1.0 - t * 0.8)
+		a = 1.0;
+	if (((m >> 2) & 1) == 1 && q.x > 1.0 - t && q.y > 0.5 + t * 0.4 && q.y < 1.0 - t * 0.8)
+		a = 1.0;
+
+	return a;
+}
+
+// 在命中框左上角叠加「置信度 *100」的两位读数，越靠左上越不容易被边框挡住
+float4 conf_label(float4 col, float4 r, float score, float2 uv)
+{
+	if (r.z <= 0.0001 || r.w <= 0.0001)
+		return col;
+
+	float cell_h = 18.0 * texel.y;
+	float cell_w = 11.0 * texel.x;
+	float gap = 3.0 * texel.x;
+	float padx = 4.0 * texel.x;
+	float total_w = cell_w * 2.0 + gap + padx * 2.0;
+
+	float2 o;
+	o.x = clamp(r.x, 0.0, max(0.0, 1.0 - total_w));
+	o.y = r.y - cell_h - 3.0 * texel.y;
+	if (o.y < 0.0)
+		o.y = r.y + 3.0 * texel.y;
+
+	if (uv.x >= o.x && uv.x <= o.x + total_w && uv.y >= o.y && uv.y <= o.y + cell_h)
+		col.rgb = lerp(col.rgb, float3(0.0, 0.0, 0.0), 0.45);
+
+	int v = min(99, (int)floor(saturate(score) * 100.0 + 0.5));
+	int d0 = (int)floor((float)v * 0.1); // 用浮点乘避免整数除法（逐像素执行）
+	int d1 = v - d0 * 10;
+
+	float2 q;
+	q.x = (uv.x - o.x - padx) / cell_w;
+	q.y = (uv.y - o.y) / cell_h;
+
+	float a = digit_alpha(q, d0, 0.19);
+	q.x -= 1.0 + gap / cell_w;
+	a = max(a, digit_alpha(q, d1, 0.19));
+
+	if (a > 0.0)
+		col.rgb = lerp(col.rgb, float3(1.0, 1.0, 1.0), a);
+
+	return col;
+}
+
 float4 PSBase(VertIn v_in) : TARGET
 {
 	float2 uv = v_in.uv;
@@ -167,6 +256,25 @@ float4 PSBase(VertIn v_in) : TARGET
 		if (count > 13.5) col = outline(col, m13, uv, tint);
 		if (count > 14.5) col = outline(col, m14, uv, tint);
 		if (count > 15.5) col = outline(col, m15, uv, tint);
+	}
+
+	if (conf_on > 0.5) {
+		if (count > 0.5)  col = conf_label(col, m0,  s0,  uv);
+		if (count > 1.5)  col = conf_label(col, m1,  s1,  uv);
+		if (count > 2.5)  col = conf_label(col, m2,  s2,  uv);
+		if (count > 3.5)  col = conf_label(col, m3,  s3,  uv);
+		if (count > 4.5)  col = conf_label(col, m4,  s4,  uv);
+		if (count > 5.5)  col = conf_label(col, m5,  s5,  uv);
+		if (count > 6.5)  col = conf_label(col, m6,  s6,  uv);
+		if (count > 7.5)  col = conf_label(col, m7,  s7,  uv);
+		if (count > 8.5)  col = conf_label(col, m8,  s8,  uv);
+		if (count > 9.5)  col = conf_label(col, m9,  s9,  uv);
+		if (count > 10.5) col = conf_label(col, m10, s10, uv);
+		if (count > 11.5) col = conf_label(col, m11, s11, uv);
+		if (count > 12.5) col = conf_label(col, m12, s12, uv);
+		if (count > 13.5) col = conf_label(col, m13, s13, uv);
+		if (count > 14.5) col = conf_label(col, m14, s14, uv);
+		if (count > 15.5) col = conf_label(col, m15, s15, uv);
 	}
 
 	if (roi_on > 0.5)
