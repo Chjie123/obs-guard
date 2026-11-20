@@ -2,8 +2,6 @@ cmake_minimum_required(VERSION 3.20)
 
 project(obs-guard VERSION 0.1.3 LANGUAGES C CXX)
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -20,9 +18,10 @@ set(ONNXRUNTIME_ROOT "" CACHE PATH "Extracted onnxruntime-win-x64-* package (emp
 
 # ---------------------------------------------------------------------------
 # 1. 定位 OBS SDK
-#    路线 A：obs-plugintemplate / 已安装的 SDK -> find_package(libobs)
-#    路线 B：已有的 OBS 构建树 -> -DOBS_SOURCE_DIR= -DOBS_BUILD_DIR=
-#    路线 C：手工整理的 SDK 目录 -> -DOBS_SDK_DIR=<含 include/ 与 lib/obs.lib>
+#    推荐：tools\fetch-obs-sdk.ps1 生成 sdk\，再传 -DOBS_SDK_DIR=<该目录>
+#          （目录需含 include/ 与 lib/obs.lib）
+#    其他：已有 OBS 源码与构建树 -> -DOBS_SOURCE_DIR= -DOBS_BUILD_DIR=
+#          环境中已提供 libobs 的 CMake 包 -> find_package(libobs) 直接命中
 # ---------------------------------------------------------------------------
 set(OBS_LIB "")
 set(OBS_INCLUDE_DIRS "")
