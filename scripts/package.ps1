@@ -93,6 +93,11 @@ foreach ($f in @("install.cmd", "install.ps1", "uninstall.cmd")) {
     if (Test-Path $src) { Copy-Item $src $stage -Force }
 }
 
+# The archive must carry the license text itself, not just a reference to it.
+$licSrc = Join-Path $root "LICENSE"
+if (-not (Test-Path $licSrc)) { Fail "LICENSE missing" }
+Copy-Item $licSrc (Join-Path $stage "LICENSE.txt") -Force
+
 $readmeSrc = Join-Path $root "docs\install-readme.txt"
 if (-not (Test-Path $readmeSrc)) { Fail "docs\install-readme.txt missing" }
 $readme = (Get-Content $readmeSrc -Encoding UTF8) -replace '@VERSION@', $Version
