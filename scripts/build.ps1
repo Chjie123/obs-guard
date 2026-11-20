@@ -153,7 +153,7 @@ if (-not $configured) {
 $code = Invoke-Build $dir
 if ($code -ne 0) { exit $code }
 
-$rundir = Join-Path $root "$dir\rundir"
+$rundir = if ([System.IO.Path]::IsPathRooted($dir)) { Join-Path $dir "rundir" } else { Join-Path $root "$dir\rundir" }
 Write-Host ""
 Write-Host "[+] build ok" -ForegroundColor Green
 Write-Host "    build dir: $dir"

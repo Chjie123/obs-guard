@@ -25,6 +25,13 @@ $ErrorActionPreference = "Stop"
 # scripts/ lives one level below the project root
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 
+# Join-Path cannot combine a root with a drive-qualified child, so return
+# absolute paths unchanged.
+function Resolve-Under($base, $p) {
+    if ([System.IO.Path]::IsPathRooted($p)) { return $p }
+    return Join-Path $base $p
+}
+
 function Fail($m) { Write-Host "[x] $m" -ForegroundColor Red; exit 1 }
 function Info($m) { Write-Host "[*] $m" -ForegroundColor Cyan }
 
@@ -51,7 +58,7 @@ if (-not $SkipBuild) {
     if ($LASTEXITCODE -ne 0) { Fail "build failed" }
 }
 
-$rundir = Join-Path $root "$BuildDir\rundir"
+$rundir = Resolve-Under $root "$BuildDir\rundir"
 $srcDll = Join-Path $rundir "obs-plugins\64bit\obs-guard.dll"
 $srcData = Join-Path $rundir "data\obs-plugins\obs-guard"
 if (-not (Test-Path $srcDll)) { Fail "plugin not found: $srcDll (run .\build.ps1 first)" }
@@ -60,7 +67,8 @@ if (-not (Test-Path $srcData)) { Fail "data dir not found: $srcData" }
 # ---------------------------------------------------------------------------
 # 2. stage
 # ---------------------------------------------------------------------------
-$stage = Join-Path $root (Join-Path $OutDir "obs-guard-$Version")
+$outRoot = Resolve-Under $root $OutDir
+$stage = Join-Path $outRoot "obs-guard-$Version"
 $pPlugin = Join-Path $stage "obs-plugins\64bit"
 $pData = Join-Path $stage "data\obs-plugins\obs-guard"
 
@@ -95,7 +103,7 @@ Info "staged: $stage"
 # ---------------------------------------------------------------------------
 # 3. zip
 # ---------------------------------------------------------------------------
-$zip = Join-Path $root (Join-Path $OutDir "obs-guard-$Version.zip")
+$zip = Join-Path $outRoot "obs-guard-$Version.zip"
 Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -Force
 $size = (Get-Item $zip).Length
 
